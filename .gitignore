@@ -5,3 +5,4 @@ tumor_surrogate_pytorch/Atlasfiles/*
 *.pth
 *.png
 tumor_surrogate_pytorch/wandb/*
+wandb/*

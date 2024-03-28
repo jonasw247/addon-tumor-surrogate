@@ -1,0 +1,7 @@
+tumor_surrogate_pytorch/outputImg/*
+
+*.pyc
+tumor_surrogate_pytorch/Atlasfiles/*
+*.pth
+*.png
+tumor_surrogate_pytorch/wandb/*

@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-
+import  torch.nn.functional as F
 
 class IdentityLayer(nn.Module):
     def __init__(self):
@@ -131,7 +131,7 @@ class TumorSurrogate(nn.Module):
             else:
                 skip_x = x
                 x = block(x)
-        return x
+        return F.sigmoid(x)
 
 
 

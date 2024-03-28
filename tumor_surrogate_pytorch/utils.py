@@ -30,20 +30,31 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
-def loss_function(u_sim, u_pred, csf):
-    pred_loss = torch.mean(torch.abs(u_sim[u_sim >= 0.001] - u_pred[u_sim >= 0.001]))
-    csf_loss = torch.mean(torch.abs(u_sim[csf >= 0.001] - u_pred[csf >= 0.001]))
+def loss_function(u_sim, u_pred, mask):
+    pred_loss = torch.mean(torch.abs(u_sim[u_sim >= 0.001] * mask[u_sim >= 0.001]  - u_pred[u_sim >= 0.001] * mask[u_sim >= 0.001]))
+    #pred_loss = torch.mean(torch.abs(u_sim- u_pred))
+    csf_loss = 0 # torch.mean(torch.abs(u_sim[csf >= 0.001] - u_pred[csf >= 0.001]))
+    wm_gm_Loss = torch.mean(torch.abs(u_sim - u_pred) * mask )
+    full_loss = torch.mean(torch.abs(u_sim - u_pred) )
 
     if math.isnan(pred_loss.item()):
         pred_loss = 0
-    loss = pred_loss + csf_loss
-    return loss
+    loss = 0.9 * pred_loss + 0.09* wm_gm_Loss + 0.01 * full_loss
+    return loss 
 
 
 def compute_dice_score(u_pred, u_sim, threshold):
     tp = torch.sum((u_pred > threshold) * (u_sim > threshold)).float()
     tpfp = torch.sum(u_pred > threshold).float()
     tpfn = torch.sum(u_sim > threshold).float()
+    if tpfn + tpfp == 0:
+        return None
+    return torch.mean(2 * tp / (tpfn + tpfp))
+
+def compute_dice_score_in_mask(u_pred, u_sim, threshold, mask):
+    tp = torch.sum((u_pred > threshold) * (u_sim > threshold) * mask).float()
+    tpfp = torch.sum((u_pred > threshold) * mask).float()
+    tpfn = torch.sum((u_sim > threshold) * mask).float()
     if tpfn + tpfp == 0:
         return None
     return torch.mean(2 * tp / (tpfn + tpfp))

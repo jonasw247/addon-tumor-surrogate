@@ -116,7 +116,7 @@ class TumorSurrogate(nn.Module):
 
         self.encoder_blocks = nn.ModuleList(encoder_blocks)
         self.decoder_blocks = nn.ModuleList(decoder_blocks)
-        self.parameter_encoder = nn.Linear(in_features=3, out_features=3*8*8*8)
+        self.parameter_encoder = nn.Linear(in_features=5, out_features=3*8*8*8)
 
     def forward(self, x, parameters):
         for block in self.encoder_blocks:

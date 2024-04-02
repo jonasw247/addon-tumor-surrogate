@@ -12,13 +12,13 @@ from utils import AverageMeter, loss_function, compute_dice_score, mean_absolute
 import os
 torch.manual_seed(42)
 
-def visualize(output, input, ground_truth, step, path):
+def visualize(output, input, ground_truth, step, path, mask = None):
 
     import matplotlib.pyplot as plt
     print('output', output.shape)   
     print('input', input.shape)
     print('ground_truth', ground_truth.shape)
-    fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+    fig, axs = plt.subplots(1, 4, figsize=(20, 5))
     img0 = axs[0].imshow(output[0, 0,32].detach().cpu().numpy())
     axs[0].set_title("Output")
     fig.colorbar(img0, ax=axs[0], orientation='vertical')
@@ -30,6 +30,12 @@ def visualize(output, input, ground_truth, step, path):
     img2 = axs[2].imshow(ground_truth[0, 0,32].detach().cpu().numpy())
     axs[2].set_title("Ground Truth")
     fig.colorbar(img2, ax=axs[2], orientation='vertical')
+
+    if mask is not None:
+        img3 = axs[3].imshow(( mask[0, 0,32].detach().cpu().numpy() > 0.001 ) * output[0, 0,32].detach().cpu().numpy())
+        axs[3].set_title("Masked Output")
+        fig.colorbar(img3, ax=axs[3], orientation='vertical')
+
     # draw color bar for each img
     for ax in axs:
         ax.set_xticks([])
@@ -50,9 +56,9 @@ class Trainer():
         self.global_step = 0
 
         self.startTrain = 0
-        self.stopTrain = 1
-        self.startVal = self.stopTrain+1
-        self.stopVal = 10
+        self.stopTrain = config.train_size
+        self.startVal = self.stopTrain
+        self.stopVal = self.stopTrain + config.val_size
         self.name  = "init_noNameYet"
 
     """ learning rate """
@@ -70,7 +76,7 @@ class Trainer():
             param_group['lr'] = new_lr
 
     def train(self):
-        train_dataset = MyDataset(start=0, stop=2)
+        train_dataset = MyDataset(start=self.startTrain, stop=self.stopTrain)
         data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=self.config.train_batch_size,
                                                   num_workers=16, pin_memory=True, shuffle=False)
 
@@ -86,7 +92,7 @@ class Trainer():
         for i, (input, parameters, ground_truth) in enumerate(data_loader):
             input, parameters, ground_truth = input.to(self.device), parameters.to(self.device), ground_truth.to(self.device)
             output = net(input, parameters)
-            visualize(output, input, ground_truth, -1, self.save_path + "/" + self.name + "/outputImgs/")
+            visualize(output, input, ground_truth, -1, self.save_path + "/" + self.name + "/outputImgs/", mask=input[:, 0].unsqueeze(1)  > 0.001)
             break
         
         wandb.init(project="tumorSimOrigIVanilla")
@@ -134,9 +140,11 @@ class Trainer():
                     if dice is not None:
                         wandb.log({"Dice/train": dice.item()}, step=self.global_step)
 
+                #
                 if diceInsideBrain is not None:
                     dice_score_masked.update(diceInsideBrain, input.size(0))
                     wandb.log({"DiceMasked/train": diceInsideBrain.item()}, step=self.global_step)
+                wandb.log({"DiceMasked/train": diceInsideBrain.item()}, step=self.global_step)
                 self.global_step += 1
 
                 # compute gradient and do SGD step
@@ -149,10 +157,10 @@ class Trainer():
                     savepath = self.save_path + self.name + "/modelsWeights"
                     os.makedirs(savepath, exist_ok=True)
                     torch.save(net.state_dict(), savepath+"/epoch"+ str(epoch) + '.pth')
-            visualize(output, input, ground_truth, epoch, self.save_path + "/" + self.name + "/outputImgs/")
+            visualize(output, input, ground_truth, epoch, self.save_path + "/" + self.name + "/outputImgs/", mask=input[:, 0].unsqueeze(1)  > 0.001)
             # validate
             if (epoch + 1) % validation_frequency == 0:
-                val_loss, val_mae, val_dice = self.validate(net=net)
+                val_loss, val_mae, val_dice = self.validate(net=net , step=epoch)
 
                 # tensorboard logging
                 wandb.log({"Loss/val": val_loss}, step=self.global_step)
@@ -229,6 +237,9 @@ class Trainer():
                         dice_score_04.append(dice_04_insideBrain.cpu().item())
                     if dice_08_insideBrain is not None:
                         dice_score_08.append(dice_08_insideBrain.cpu().item())
+                    
+                    if i == 0:
+                        visualize(output, input, ground_truth, step, self.save_path + "/" + self.name + "/outputImgsVal/", mask=input[:, 0].unsqueeze(1)  > 0.001)
 
             return losses.avg, mae.avg, dice_score_avg.avg
 

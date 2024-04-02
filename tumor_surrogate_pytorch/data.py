@@ -114,8 +114,8 @@ class MyDataset(Dataset):
 
         tumorImg = tumorImg[:, lowerBound:upperBound, lowerBound:upperBound, lowerBound:upperBound]
         
-        #TODO WRONG check params should be: torch.tensor([x, y, z, muD, muRho])
-        return  allAtlasImgs, torch.tensor([D, rho, T]), tumorImg
+        #TODO WRONG check params should be: torch.tensor([x, y, z, muD, muRho]) not torch.tensor([D, rho, T])
+        return  allAtlasImgs,torch.tensor([x, y, z, muD, muRho]), tumorImg
 
 if __name__ == '__main__':
     '''# path = '/mnt/Drive2/ivan/data/tumor_mparam/v/'

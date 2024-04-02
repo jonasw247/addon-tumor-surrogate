@@ -31,15 +31,15 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
 def loss_function(u_sim, u_pred, mask):
-    pred_loss = torch.mean(torch.abs(u_sim[u_sim >= 0.001] * mask[u_sim >= 0.001]  - u_pred[u_sim >= 0.001] * mask[u_sim >= 0.001]))
+    pred_loss = torch.mean(torch.abs(u_sim[u_sim >= 0.001] * mask[u_sim >= 0.001]  - u_pred[u_sim >= 0.001] * mask[u_sim >= 0.001])**2)
     #pred_loss = torch.mean(torch.abs(u_sim- u_pred))
     csf_loss = 0 # torch.mean(torch.abs(u_sim[csf >= 0.001] - u_pred[csf >= 0.001]))
-    wm_gm_Loss = torch.mean(torch.abs(u_sim - u_pred) * mask )
-    full_loss = torch.mean(torch.abs(u_sim - u_pred) )
+    wm_gm_Loss = torch.mean(torch.abs(u_sim - u_pred)**2 * mask )
+    full_loss = torch.mean(torch.abs(u_sim - u_pred)**2 )
 
     if math.isnan(pred_loss.item()):
         pred_loss = 0
-    loss = 0.9 * pred_loss + 0.09* wm_gm_Loss + 0.01 * full_loss
+    loss = 0.95 * pred_loss + 0.05* wm_gm_Loss #+ 0.01 * full_loss
     return loss 
 
 

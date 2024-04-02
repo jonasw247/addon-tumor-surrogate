@@ -6,3 +6,4 @@ tumor_surrogate_pytorch/Atlasfiles/*
 *.png
 tumor_surrogate_pytorch/wandb/*
 wandb/*
+tumor_surrogate_pytorch/optimizeOutput/*

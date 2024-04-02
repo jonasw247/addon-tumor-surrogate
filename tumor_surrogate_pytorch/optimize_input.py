@@ -25,10 +25,8 @@ model = model.to(device=device)
 # chose from epoch 17 
 model.load_state_dict(torch.load('/mnt/8tb_slot8/jonas/workingDirDatasets/tumor-surrogate-model-states/daily-cherry-69/modelsWeights/epoch17.pth'))
 
-
-
 # %% load test data:
-start = 20000 
+start = 20005 
 number_of_samples = 1
 stop = start + number_of_samples
 dataset = MyDataset(start=start, stop=stop)
@@ -39,85 +37,103 @@ data_loader = torch.utils.data.DataLoader(dataset, batch_size=number_of_samples,
 
 nBatch = len(data_loader)
 myOptim = torch.optim.Adam
-optimizationSteps = 50
-
-log = True
-if log:
-    configForWandb = { 'nBatch': nBatch, 'number_of_samples': number_of_samples, 'start': start, 'stop': stop, 'optimizationSteps': optimizationSteps, "myOptim": myOptim.__name__}
-    wandb.init(project="optimizeInput", config=configForWandb)
-    wandb.watch(model)
+optimizationSteps = 100
 
 
-#%% iter over data look at data...
+configForWandb = { 'nBatch': nBatch, 'number_of_samples': number_of_samples, 'start': start, 'stop': stop, 'optimizationSteps': optimizationSteps, "myOptim": myOptim.__name__}
+wandb.init(project="optimizeInput", config=configForWandb)
+wandb.watch(model)
+
+
+# iter over data look at data...
 model.to(device)
 model.eval() 
 
 #model.zero_grad()
 losses = []
-optimizer = optim.Adam([input], lr=0.01)
-for i, (input_tissue, parameters_ground_truth, output_ground_truth) in enumerate(data_loader):
+for i0, (input_tissue, parameters_ground_truth, output_ground_truth) in enumerate(data_loader):
     
     parameters = parameters_ground_truth.clone()
     parameters[:,0] = 0
     parameters[:,1] = 0
     parameters[:,2] = 0
-    parameters[:,3] = 0
-    parameters[:,4] = 1
-    parameters[:,5] = 3
+    parameters[:,3] = 1
+    parameters[:,4] = 5
     input_tissue = input_tissue.to(device)
     parameters = parameters.to(device)
     parameters.requires_grad = True
 
     optimizer = myOptim([parameters], lr=0.01)
 
-    for i in range(optimizationSteps):
+    for optimStep in range(optimizationSteps):
         optimizer.zero_grad()
         prediction = model(input_tissue, parameters)
         mask = input_tissue[:, 0].unsqueeze(1)  > 0.001
         prediction_masked = prediction.to(device) * mask.to(device)
-        loss = F.mse_loss(prediction_masked, output_ground_truth.to(device))
+        #loss = F.mse_loss(prediction_masked, output_ground_truth.to(device))
+        loss = F.l1_loss(prediction_masked, output_ground_truth.to(device))
         grad_parameters, = autograd.grad(loss, parameters, retain_graph=True)
         
         loss.backward()
         optimizer.step()
-        print(loss.item())
-
-        for threshold in np.linspace(0.1, 0.9, 9):
+               
+        logDict = {}
+        logDict["_loss"] = loss.item()
+        logDict["_grad_parameters_mean"] = grad_parameters.mean().item()
+        #log each grad_parameter
+        parameterDiff = torch.abs(parameters - parameters_ground_truth.to(device))
+        labels = ["x", "y", "z", "muD", "muRho"]
+        for j in range(5):
+            logDict["grad_parameters_" + labels[j]] = grad_parameters[0,j].item()
+            logDict["parameters_" + labels[j]] = parameters[0,j].item()
+            logDict["parameters_difference_" + labels[j]] = parameterDiff[0,j].item()
+            
+    
+        for threshold in np.linspace(0.1, 0.9, 10):
             dice = utils.compute_dice_score(prediction_masked, output_ground_truth.to(device), threshold=threshold)
-            print( "dice", threshold, dice.item())
+            stringTh = "dice_" + str(round(threshold, 2))
+            logDict[stringTh] = dice.item()
+            #print( "dice", threshold, dice.item())
 
-        if log:
-            wandb.log({'loss': loss.item()})
-            wandb.log({'grad_parameters': grad_parameters})
-            wandb.log({'grad_parameters_mean': grad_parameters.mean().item()})
-            wandb.log({f'dice_{threshold}' : dice.item()})
+        wandb.log(logDict)
 
-
-                
-
-        if i % plotforStep == 0 or i == 0:
-            fig, axes = plt.subplots(1, 2, figsize=(12, 6))  # 1 row, 2 columns
+        if optimStep % plotforStep == 0 or optimStep == 0:
+            print("step: ", optimStep, loss.item())
+            print(loss.item())
+            fig, axes = plt.subplots(1, 3, figsize=(18, 6))  # 1 row, 2 columns
 
             # Plot the predicted mask
             ax1 = axes[0]
-            img1 = ax1.imshow(prediction_masked.cpu().detach().numpy()[0,0, :, :, 32], vmin=0, vmax=1)
-            ax1.set_title(f'Iteration {i} of {nBatch}: Prediction')
-            fig.colorbar(img1, ax=ax1, fraction=0.046, pad=0.04)
+
+            img1 = ax1.imshow(input_tissue.cpu().detach().numpy()[0,0, :, :, 32], cmap='gray')
+            toPlot = prediction_masked.cpu().detach().numpy()[0,0, :, :, 32]
+            img1_1 = ax1.imshow(toPlot, vmin=0, vmax=1, cmap='Blues', alpha=toPlot)
+            ax1.set_title(f'Iteration {optimStep} of {nBatch}: Prediction')
+            fig.colorbar(img1_1, ax=ax1, fraction=0.046, pad=0.04)
 
             # Plot the ground truth
             ax2 = axes[1]
-            img2 = ax2.imshow(output_ground_truth.cpu().detach().numpy()[0,0, :, :, 32], vmin=0, vmax=1)
-            ax2.set_title(f'Iteration {i} of {nBatch}: Ground Truth')
-            fig.colorbar(img2, ax=ax2, fraction=0.046, pad=0.04)
+            img2 = ax2.imshow(input_tissue.cpu().detach().numpy()[0,0, :, :, 32], cmap='gray')
+            toPlot = output_ground_truth.cpu().detach().numpy()[0,0, :, :, 32]
+            img2_1 = ax2.imshow(toPlot, vmin=0, vmax=1, cmap='Greens', alpha=toPlot)
+            ax2.set_title(f'Iteration {optimStep} of {nBatch}: Ground Truth')
+            fig.colorbar(img2_1, ax=ax2, fraction=0.046, pad=0.04)
 
+            #plot the difference
+            ax3 = axes[2]
+            img3 = ax3.imshow(input_tissue.cpu().detach().numpy()[0,0, :, :, 32], cmap='gray')
+            toPlot = np.abs(prediction_masked.cpu().detach().numpy()[0,0, :, :, 32] - output_ground_truth.cpu().detach().numpy()[0,0, :, :, 32])
+            img3_1 = ax3.imshow(toPlot, vmin=0, vmax=1, cmap='Reds', alpha=toPlot)
+            ax3.set_title(f'Iteration {optimStep} of {nBatch}: Difference')
+            fig.colorbar(img3_1, ax=ax3, fraction=0.046, pad=0.04)
+            
             # Display the figure
             plt.tight_layout()
             path = "optimizeOutput/" + wandb.run.name + "/" 
             os.makedirs(path, exist_ok=True)
-            plt.savefig(path + "step" + str(i) + ".png")
+            plt.savefig(path + "step" + str(optimStep) + ".pdf")
         
-if log:
-    wandb.finish()
+wandb.finish()
 
 # %%
 if torch.cuda.is_available():

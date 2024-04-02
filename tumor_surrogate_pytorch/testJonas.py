@@ -57,6 +57,7 @@ for i, (input, parameters, ground_truth) in enumerate(data_loader):
     grad_parameters, = autograd.grad(loss, parameters, retain_graph=True)
     mask = input[:, 0].unsqueeze(1)  > 0.001
     dices = []
+    print(grad_parameters)
 
     for i in range(number_of_samples):
         plt.title(f'iteration {i} of {nBatch}')

@@ -8,3 +8,5 @@ tumor_surrogate_pytorch/wandb/*
 wandb/*
 tumor_surrogate_pytorch/optimizeOutput/*
 optimizeOutput/*
+optimizeOutputPatients/*
+tumor_surrogate_pytorch/optimizeOutputPatients/*

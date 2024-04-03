@@ -165,6 +165,7 @@ class realPatientsDataset(Dataset):
         wm = nib.load(self.datasetPath + "mich_rec_SRI_S3_maskedAndCut_rescaled_128/" + patient + "/WM_flippedCorrectly.nii").get_fdata()
         gm = nib.load(self.datasetPath + "mich_rec_SRI_S3_maskedAndCut_rescaled_128/" + patient + "/GM_flippedCorrectly.nii").get_fdata()
         allTissue = np.abs(0.2 * wm + 0.1 * gm)
+        allTissue[allTissue < 0.03] = 0
         tisImg = torch.tensor(allTissue[:self.inputDim ,:self.inputDim ,:self.inputDim ].astype(np.float32))
         
         rollX =  self.inputDim // 2 - COMInt[0]
@@ -176,7 +177,7 @@ class realPatientsDataset(Dataset):
         tumorImg = torch.tensor(tumorImg.astype(np.float32)).roll(shifts=(rollX, rollY, rollZ  ), dims=(1, 2, 3))
 
         # dont look at segmentation in CSF
-        tumorImg[:,tisImg < 0.03] = 0
+        tumorImg[:,tisImg < 0.0001] = 0
 
         #crop to 64
         lowerBound = self.inputDim // 2 -  self.inputDim // 4

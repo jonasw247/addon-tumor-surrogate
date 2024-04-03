@@ -3,7 +3,7 @@ import math
 import torch
 import wandb
 from config import get_config
-from data import TumorDataset, MyDataset
+from data import TumorDataset, MyDataset, realPatientsDataset
 from model import TumorSurrogate
 import os
 import matplotlib.pyplot as plt
@@ -15,7 +15,12 @@ import torch.optim as optim
 
 import utils
 
+def contFunction(x, low = 0.25, high = 0.675, steepness = 100):
+    return  (high - low) * F.sigmoid((x - high)*steepness) + F.sigmoid((x - low) * steepness) * low 
 
+xs = np.linspace(0, 1, 100)
+ys = contFunction(torch.tensor(xs)).numpy()
+plt.plot(xs, ys)
 
 # %%
 model = TumorSurrogate(widths=[128, 128, 128, 128], n_cells=[5, 5, 5, 4], strides=[2, 2, 2, 1])
@@ -32,17 +37,30 @@ stop = start + number_of_samples
 dataset = MyDataset(start=start, stop=stop)
 plotforStep = 10
 fixOrigin = False
+optimizationSteps = 100
+learningRate = 0.01#0.01
+useRealData = True
+edemaThreshold = 0.25
+enhancingThreshold = 0.675
 
-data_loader = torch.utils.data.DataLoader(dataset, batch_size=number_of_samples,
+if not useRealData:
+    data_loader = torch.utils.data.DataLoader(dataset, batch_size=number_of_samples,
                                             num_workers=16, pin_memory=True, shuffle=False)
+    patientName = str(start)
+else:
+    start = 5
+    dataset = realPatientsDataset(start=start)
+    patientName = dataset.patients[0]
+    data_loader = torch.utils.data.DataLoader(dataset, batch_size=1,
+                                            num_workers=1,  shuffle=False)
+
 
 nBatch = len(data_loader)
 myOptim = torch.optim.Adam
-optimizationSteps = 100
-learningRate = 0.01#0.01
 
 
-configForWandb = { 'nBatch': nBatch, 'number_of_samples': number_of_samples, 'start': start, 'stop': stop, 'optimizationSteps': optimizationSteps, "myOptim": myOptim.__name__, "learningRate": learningRate, "model": model.__class__.__name__, "fixOrigin": fixOrigin, "plotforStep": plotforStep}
+
+configForWandb = { 'nBatch': nBatch, 'number_of_samples': number_of_samples, 'start': start, 'stop': stop, 'optimizationSteps': optimizationSteps, "myOptim": myOptim.__name__, "learningRate": learningRate, "model": model.__class__.__name__, "fixOrigin": fixOrigin, "plotforStep": plotforStep, "useRealData": useRealData, "edemaThreshold": edemaThreshold, "enhancingThreshold": enhancingThreshold, "patientName": patientName}
 wandb.init(project="optimizeInput", config=configForWandb)
 wandb.watch(model)
 
@@ -72,6 +90,12 @@ for i0, (input_tissue, parameters_ground_truth, output_ground_truth) in enumerat
         prediction = model(input_tissue, parameters)
         mask = input_tissue[:, 0].unsqueeze(1)  > 0.001
         prediction_masked = prediction.to(device) * mask.to(device)
+        prediction_masked_continous = prediction_masked.clone().detach()
+        #lossPrediction = prediction_masked.copy()
+        if useRealData:
+            # adapt the data to look like a step function at 0.25
+            prediction_masked = contFunction(prediction_masked, low=edemaThreshold, high=enhancingThreshold)
+
         loss = F.mse_loss(prediction_masked, output_ground_truth.to(device))
         #loss = F.l2_loss(prediction_masked, output_ground_truth.to(device))
         grad_parameters, = autograd.grad(loss, parameters, retain_graph=True)
@@ -101,9 +125,13 @@ for i0, (input_tissue, parameters_ground_truth, output_ground_truth) in enumerat
         #log mean parameter difference
         logDict["_parameters_difference_mean"] = parameterDiff.abs().mean().item()
             
-    
-        for threshold in np.linspace(0.1, 0.9, 9):
-            dice = utils.compute_dice_score(prediction_masked, output_ground_truth.to(device), threshold=threshold)
+        calcDiceFor = np.linspace(0.1, 0.9, 9).tolist()
+        # append to dice list 
+        calcDiceFor.append(edemaThreshold-0.01)
+        calcDiceFor.append(enhancingThreshold-0.01)
+
+        for threshold in calcDiceFor:
+            dice = utils.compute_dice_score(prediction_masked_continous, output_ground_truth.to(device), threshold=threshold)
             stringTh = "dice_" + str(round(threshold, 2))
             logDict[stringTh] = dice.item()
             #print( "dice", threshold, dice.item())
@@ -119,8 +147,9 @@ for i0, (input_tissue, parameters_ground_truth, output_ground_truth) in enumerat
             ax1 = axes[0]
 
             img1 = ax1.imshow(input_tissue.cpu().detach().numpy()[0,0, :, :, 32], cmap='gray')
+            #TODO change this 
             toPlot = prediction_masked.cpu().detach().numpy()[0,0, :, :, 32]
-            img1_1 = ax1.imshow(toPlot, vmin=0, vmax=1, cmap='Blues', alpha=toPlot)
+            img1_1 = ax1.imshow(toPlot, vmin=0, vmax=1, cmap='hsv', alpha=toPlot)
             ax1.set_title(f'Iteration {optimStep} of {nBatch}: Prediction')
             fig.colorbar(img1_1, ax=ax1, fraction=0.046, pad=0.04)
 
@@ -128,7 +157,7 @@ for i0, (input_tissue, parameters_ground_truth, output_ground_truth) in enumerat
             ax2 = axes[1]
             img2 = ax2.imshow(input_tissue.cpu().detach().numpy()[0,0, :, :, 32], cmap='gray')
             toPlot = output_ground_truth.cpu().detach().numpy()[0,0, :, :, 32]
-            img2_1 = ax2.imshow(toPlot, vmin=0, vmax=1, cmap='Greens', alpha=toPlot)
+            img2_1 = ax2.imshow(toPlot, vmin=0, vmax=1, cmap='hsv', alpha=toPlot)
             ax2.set_title(f'Iteration {optimStep} of {nBatch}: Ground Truth')
             fig.colorbar(img2_1, ax=ax2, fraction=0.046, pad=0.04)
 
@@ -142,9 +171,12 @@ for i0, (input_tissue, parameters_ground_truth, output_ground_truth) in enumerat
             
             # Display the figure
             plt.tight_layout()
-            path = "optimizeOutput/" + wandb.run.name + "/" 
+            path = "optimizeOutputPatients/" + patientName + "/" 
             os.makedirs(path, exist_ok=True)
             plt.savefig(path + "step" + str(optimStep) + ".pdf")
+            plt.show()
+            plt.close()
+    break
         
 wandb.finish()
 

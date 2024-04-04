@@ -31,154 +31,185 @@ model = model.to(device=device)
 # chose from epoch 17, 25000 was also good with dice. from daily-cherry-69
 model.load_state_dict(torch.load('/mnt/8tb_slot8/jonas/workingDirDatasets/tumor-surrogate-model-states/daily-cherry-69/modelsWeights/epoch17.pth'))
 
-start = 20010
-number_of_samples = 1
-stop = start + number_of_samples
-dataset = MyDataset(start=start, stop=stop)
-plotforStep = 10
-fixOrigin = False
-optimizationSteps = 100
-learningRate = 0.01#0.01
-useRealData = True
-edemaThreshold = 0.25
-enhancingThreshold = 0.675
+def runForPatient(thePatientIDX):
+    start = 20000 + thePatientIDX
+    number_of_samples = 1
+    stop = start + number_of_samples
+    dataset = MyDataset(start=start, stop=stop)
+    plotforStep = 20
+    fixOrigin = True#False
+    optimizationSteps = 200#250
+    learningRate = 0.01#0.01
+    useRealData = True
+    edemaThreshold = 0.25
+    enhancingThreshold = 0.675
+    plotFullTumorNotThresholded = False
 
-if not useRealData:
-    data_loader = torch.utils.data.DataLoader(dataset, batch_size=number_of_samples,
-                                            num_workers=16, pin_memory=True, shuffle=False)
-    patientName = str(start)
-else:
-    start = 5
-    dataset = realPatientsDataset(start=start)
-    patientName = dataset.patients[0]
-    data_loader = torch.utils.data.DataLoader(dataset, batch_size=1,
-                                            num_workers=1,  shuffle=False)
+    outputFolder = "/mnt/8tb_slot8/jonas/workingDirDatasets/addon-tumor-surrogate-output"
+    if  not fixOrigin:
+        outputFolder += "-freeOrigin"
 
-
-nBatch = len(data_loader)
-myOptim = torch.optim.Adam
-
-
-
-configForWandb = { 'nBatch': nBatch, 'number_of_samples': number_of_samples, 'start': start, 'stop': stop, 'optimizationSteps': optimizationSteps, "myOptim": myOptim.__name__, "learningRate": learningRate, "model": model.__class__.__name__, "fixOrigin": fixOrigin, "plotforStep": plotforStep, "useRealData": useRealData, "edemaThreshold": edemaThreshold, "enhancingThreshold": enhancingThreshold, "patientName": patientName}
-wandb.init(project="optimizeInput", config=configForWandb)
-wandb.watch(model)
-
-
-# iter over data look at data...
-model.to(device)
-model.eval() 
-
-#model.zero_grad()
-losses = []
-for i0, (input_tissue, parameters_ground_truth, output_ground_truth) in enumerate(data_loader):
+    saveDict = {}
     
-    parameters = parameters_ground_truth.clone()
-    parameters[:,0] = 0
-    parameters[:,1] = 0
-    parameters[:,2] = 0
-    parameters[:,3] = 1
-    parameters[:,4] = 5
-    input_tissue = input_tissue.to(device)
-    parameters = parameters.to(device)
-    parameters.requires_grad = True
 
-    optimizer = myOptim([parameters], lr=learningRate)
 
-    for optimStep in range(optimizationSteps):
-        optimizer.zero_grad()
-        prediction = model(input_tissue, parameters)
-        mask = input_tissue[:, 0].unsqueeze(1)  > 0.001
-        prediction_masked = prediction.to(device) * mask.to(device)
-        prediction_masked_continous = prediction_masked.clone().detach()
-        #lossPrediction = prediction_masked.copy()
-        if useRealData:
-            # adapt the data to look like a step function at 0.25
-            prediction_masked = contFunction(prediction_masked, low=edemaThreshold, high=enhancingThreshold)
+    if not useRealData:
+        data_loader = torch.utils.data.DataLoader(dataset, batch_size=number_of_samples,
+                                                num_workers=16, pin_memory=True, shuffle=False)
+        patientName = str(start)
+    else:
+        # 7 is bad, exclude it TODO
+        start = thePatientIDX
+        dataset = realPatientsDataset(start=start)
+        patientName = dataset.patients[0]
+        data_loader = torch.utils.data.DataLoader(dataset, batch_size=1,
+                                                num_workers=1,  shuffle=False)
 
-        loss = F.mse_loss(prediction_masked, output_ground_truth.to(device))
-        #loss = F.l2_loss(prediction_masked, output_ground_truth.to(device))
-        grad_parameters, = autograd.grad(loss, parameters, retain_graph=True)
+    saveDict["patientName"] = patientName
+    saveDict["logDicts"] = []
+
+    nBatch = len(data_loader)
+    myOptim = torch.optim.Adam
+
+
+    configForWandb = { 'nBatch': nBatch, 'number_of_samples': number_of_samples, 'start': start, 'stop': stop, 'optimizationSteps': optimizationSteps, "myOptim": myOptim.__name__, "learningRate": learningRate, "model": model.__class__.__name__, "fixOrigin": fixOrigin, "plotforStep": plotforStep, "useRealData": useRealData, "edemaThreshold": edemaThreshold, "enhancingThreshold": enhancingThreshold, "patientName": patientName, "plotFullTumorNotThresholded": plotFullTumorNotThresholded}
+    wandb.init(project="optimizeInput", config=configForWandb)
+    wandb.watch(model)
+
+
+    # iter over data look at data...
+    model.to(device)
+    model.eval() 
+
+    #model.zero_grad()
+    losses = []
+    for i0, (input_tissue, parameters_ground_truth, output_ground_truth) in enumerate(data_loader):
         
-        loss.backward()
+        parameters = parameters_ground_truth.clone()
+        parameters[:,0] = 0
+        parameters[:,1] = 0
+        parameters[:,2] = 0
+        parameters[:,3] = 1
+        parameters[:,4] = 5
+        input_tissue = input_tissue.to(device)
+        parameters = parameters.to(device)
+        parameters.requires_grad = True
 
-        # Manually zero out gradients for fixed entries
-        # dont allow to change the origin, but fix it at COM
-        if fixOrigin:
-            with torch.no_grad():
-                parameters.grad[:,0] = 0
-                parameters.grad[:,1] = 0
-                parameters.grad[:,2] = 0
-        optimizer.step()
+        optimizer = myOptim([parameters], lr=learningRate)
 
-               
-        logDict = {}
-        logDict["_loss"] = loss.item()
-        logDict["_grad_parameters_mean"] = grad_parameters.mean().item()
-        #log each grad_parameter
-        parameterDiff = parameters - parameters_ground_truth.to(device)
-        labels = ["x", "y", "z", "muD", "muRho"]
-        for j in range(5):
-            logDict["grad_parameters_" + labels[j]] = grad_parameters[0,j].item()
-            logDict["parameters_" + labels[j]] = parameters[0,j].item()
-            logDict["parameters_difference_" + labels[j]] = parameterDiff[0,j].item()
-        #log mean parameter difference
-        logDict["_parameters_difference_mean"] = parameterDiff.abs().mean().item()
+        for optimStep in range(optimizationSteps):
+            optimizer.zero_grad()
+            prediction = model(input_tissue, parameters)
+            mask = input_tissue[:, 0].unsqueeze(1)  > 0.001
+            prediction_masked = prediction.to(device) * mask.to(device)
+            prediction_masked_continous = prediction_masked.clone().detach()
+            #lossPrediction = prediction_masked.copy()
+            if useRealData:
+                # adapt the data to look like a step function at 0.25
+                prediction_masked = contFunction(prediction_masked, low=edemaThreshold, high=enhancingThreshold)
+
+            loss = F.mse_loss(prediction_masked, output_ground_truth.to(device))
+            #loss = F.l2_loss(prediction_masked, output_ground_truth.to(device))
+            grad_parameters, = autograd.grad(loss, parameters, retain_graph=True)
             
-        calcDiceFor = np.linspace(0.1, 0.9, 9).tolist()
-        # append to dice list 
-        calcDiceFor.append(edemaThreshold-0.01)
-        calcDiceFor.append(enhancingThreshold-0.01)
+            loss.backward()
 
-        for threshold in calcDiceFor:
-            dice = utils.compute_dice_score(prediction_masked_continous, output_ground_truth.to(device), threshold=threshold)
-            stringTh = "dice_" + str(round(threshold, 2))
-            logDict[stringTh] = dice.item()
-            #print( "dice", threshold, dice.item())
+            # Manually zero out gradients for fixed entries
+            # dont allow to change the origin, but fix it at COM
+            if fixOrigin:
+                with torch.no_grad():
+                    parameters.grad[:,0] = 0
+                    parameters.grad[:,1] = 0
+                    parameters.grad[:,2] = 0
+            optimizer.step()
 
-        wandb.log(logDict)
+                
+            logDict = {}
+            logDict["_loss"] = loss.item()
+            logDict["_grad_parameters_mean"] = grad_parameters.mean().item()
+            #log each grad_parameter
+            parameterDiff = parameters - parameters_ground_truth.to(device)
+            labels = ["x", "y", "z", "muD", "muRho"]
+            for j in range(5):
+                logDict["grad_parameters_" + labels[j]] = grad_parameters[0,j].item()
+                logDict["parameters_" + labels[j]] = parameters[0,j].item()
+                logDict["parameters_difference_" + labels[j]] = parameterDiff[0,j].item()
+            #log mean parameter difference
+            logDict["_parameters_difference_mean"] = parameterDiff.abs().mean().item()
+                
+            calcDiceFor = np.linspace(0.1, 0.9, 9).tolist()
+            # append to dice list 
+            calcDiceFor.append(edemaThreshold-0.01)
+            calcDiceFor.append(enhancingThreshold-0.01)
 
-        if optimStep % plotforStep == 0 or optimStep == 0:
-            print("step: ", optimStep, loss.item())
-            print(loss.item())
-            fig, axes = plt.subplots(1, 3, figsize=(18, 6))  # 1 row, 2 columns
+            for threshold in calcDiceFor:
+                dice = utils.compute_dice_score(prediction_masked_continous, output_ground_truth.to(device), threshold=threshold)
+                stringTh = "dice_" + str(round(threshold, 2))
+                logDict[stringTh] = dice.item()
+                #print( "dice", threshold, dice.item())
 
-            # Plot the predicted mask
-            ax1 = axes[0]
+            wandb.log(logDict)
+            saveDict["logDicts"].append(logDict)
 
-            img1 = ax1.imshow(input_tissue.cpu().detach().numpy()[0,0, :, :, 32], cmap='gray')
-            #TODO change this 
-            toPlot = prediction_masked.cpu().detach().numpy()[0,0, :, :, 32]
-            img1_1 = ax1.imshow(toPlot, vmin=0, vmax=1, cmap='hsv', alpha=toPlot)
-            ax1.set_title(f'Iteration {optimStep} of {nBatch}: Prediction')
-            fig.colorbar(img1_1, ax=ax1, fraction=0.046, pad=0.04)
+            if optimStep % plotforStep == 0 or optimStep == 0:
+                print("step: ", optimStep, loss.item())
+                print(loss.item())
+                fig, axes = plt.subplots(1, 3, figsize=(18, 6))  # 1 row, 2 columns
 
-            # Plot the ground truth
-            ax2 = axes[1]
-            img2 = ax2.imshow(input_tissue.cpu().detach().numpy()[0,0, :, :, 32], cmap='gray')
-            toPlot = output_ground_truth.cpu().detach().numpy()[0,0, :, :, 32]
-            img2_1 = ax2.imshow(toPlot, vmin=0, vmax=1, cmap='hsv', alpha=toPlot)
-            ax2.set_title(f'Iteration {optimStep} of {nBatch}: Ground Truth')
-            fig.colorbar(img2_1, ax=ax2, fraction=0.046, pad=0.04)
+                # Plot the predicted mask
+                ax1 = axes[0]
+                if plotFullTumorNotThresholded:
+                    cmapGT = 'Greens'
+                    cmapPred = 'Blues'                
+                    tumorPlot = prediction_masked_continous
+                else:
+                    cmapGT = 'hsv'
+                    cmapPred = 'hsv'
+                    tumorPlot = prediction_masked
 
-            #plot the difference
-            ax3 = axes[2]
-            img3 = ax3.imshow(input_tissue.cpu().detach().numpy()[0,0, :, :, 32], cmap='gray')
-            toPlot = np.abs(prediction_masked.cpu().detach().numpy()[0,0, :, :, 32] - output_ground_truth.cpu().detach().numpy()[0,0, :, :, 32])
-            img3_1 = ax3.imshow(toPlot, vmin=0, vmax=1, cmap='Reds', alpha=toPlot)
-            ax3.set_title(f'Iteration {optimStep} of {nBatch}: Difference')
-            fig.colorbar(img3_1, ax=ax3, fraction=0.046, pad=0.04)
-            
-            # Display the figure
-            plt.tight_layout()
-            path = "optimizeOutputPatients/" + patientName + "/" 
-            os.makedirs(path, exist_ok=True)
-            plt.savefig(path + "step" + str(optimStep) + ".pdf")
-            plt.show()
-            plt.close()
-    break
-        
-wandb.finish()
+                img1 = ax1.imshow(input_tissue.cpu().detach().numpy()[0,0, :, :, 32], cmap='gray')
+                #TODO change this 
+                toPlot = tumorPlot.cpu().detach().numpy()[0,0, :, :, 32]
+                img1_1 = ax1.imshow(toPlot, vmin=0, vmax=1, cmap=cmapPred, alpha=toPlot)
+                ax1.set_title(f'Iteration {optimStep} of {nBatch}: Prediction')
+                fig.colorbar(img1_1, ax=ax1, fraction=0.046, pad=0.04)
+
+                # Plot the ground truth
+                ax2 = axes[1]
+                img2 = ax2.imshow(input_tissue.cpu().detach().numpy()[0,0, :, :, 32], cmap='gray')
+                toPlot = output_ground_truth.cpu().detach().numpy()[0,0, :, :, 32]
+                img2_1 = ax2.imshow(toPlot, vmin=0, vmax=1, cmap=cmapGT, alpha=toPlot)
+                ax2.set_title(f'Iteration {optimStep} of {nBatch}: Ground Truth')
+                fig.colorbar(img2_1, ax=ax2, fraction=0.046, pad=0.04)
+
+                #plot the difference
+                ax3 = axes[2]
+                img3 = ax3.imshow(input_tissue.cpu().detach().numpy()[0,0, :, :, 32], cmap='gray')
+                toPlot = np.abs(tumorPlot.cpu().detach().numpy()[0,0, :, :, 32] - output_ground_truth.cpu().detach().numpy()[0,0, :, :, 32])
+                img3_1 = ax3.imshow(toPlot, vmin=0, vmax=1, cmap='Reds', alpha=toPlot)
+                ax3.set_title(f'Iteration {optimStep} of {nBatch}: Difference')
+                fig.colorbar(img3_1, ax=ax3, fraction=0.046, pad=0.04)
+                
+                # Display the figure
+                plt.tight_layout()
+                path = outputFolder + "/optimizeOutputPatients/" + patientName + "/" 
+                os.makedirs(path, exist_ok=True)
+                plt.savefig(path + "step" + str(optimStep) + ".pdf")
+                plt.show()
+                plt.close()
+        break
+
+    saveDict["wandbRunID"] = wandb.run.id
+
+    # save Wandb run
+    wandb.save(outputFolder + "/optimizeOutputPatients/" +patientName + "/wandB.pdf")
+    #save logDict
+    torch.save(saveDict, outputFolder + "/optimizeOutputPatients/" + patientName + "/logDict.pth")
+
+    wandb.finish()
+
+for i in range(10):
+    runForPatient(i)
 
 # %%
 if torch.cuda.is_available():

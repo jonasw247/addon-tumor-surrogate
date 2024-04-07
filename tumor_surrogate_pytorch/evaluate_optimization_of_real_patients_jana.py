@@ -3,18 +3,23 @@ import numpy as np
 import torch
 import os
 freeOrigin = True#False
+synthetic  =True
 
 if freeOrigin:
-    res_folder = "/mnt/8tb_slot8/jonas/workingDirDatasets/addon-tumor-surrogate-output-freeOrigin/optimizeOutputPatients"
+    res_folder = "/mnt/8tb_slot8/jonas/workingDirDatasets/addon-tumor-surrogate-output/freeOrigin/realData/optimizeOutputPatients/"
 else:
-    res_folder = "/mnt/8tb_slot8/jonas/workingDirDatasets/addon-tumor-surrogate-output/optimizeOutputPatients"
+    res_folder = "/mnt/8tb_slot8/jonas/workingDirDatasets/addon-tumor-surrogate-output/fixOrigin/realData/optimizeOutputPatients/"
+
+if synthetic:
+    res_folder = res_folder.replace("realData", "synthetic")
+
 # %%
 folders = np.sort(os.listdir(res_folder))
 # %%
-alldicesEnhancing, alldicesEdema, usedPatients = [], [], []
+alldicesEnhancing, alldicesEdema, usedPatients, runtimes = [], [], [], []
 for folder in folders:
-    if not "rec" in folder:
-        continue
+    #if not "rec" in folder:
+    #    continue
     if "30" in folder:
         continue
     print(folder)
@@ -27,6 +32,7 @@ for folder in folders:
     usedPatients.append(folder)
     alldicesEnhancing.append(dicesEnhancing)
     alldicesEdema.append(dicesEdema)
+    runtimes.append(savedDic["runtime"])
 
 alldicesEnhancing = np.array(alldicesEnhancing)
 alldicesEdema = np.array(alldicesEdema)
@@ -44,11 +50,11 @@ plt.legend()
 # %%
 finalEnhancing = alldicesEnhancing.T[-1]
 finalEdema = alldicesEdema.T[-1]
-# %%
-print("Enhancing: ", np.mean(finalEnhancing), np.std(finalEnhancing) / np.sqrt(len(finalEnhancing)))
-print("Edema: ", np.mean(finalEdema), np.std(finalEdema)/np.sqrt(len(finalEdema)))          
+   
 # %%
 print("Enhancing: ", round(np.mean(finalEnhancing), 2), "+-", round(np.std(finalEnhancing) / np.sqrt(len(finalEnhancing)), 2))
 print("Edema: ", round(np.mean(finalEdema), 2), "+-", round(np.std(finalEdema)/np.sqrt(len(finalEdema)), 2))
+#rounded runtime in minutes
+print("Runtime: ", round(np.mean(runtimes) / 60, 3), "+-", round(np.std(runtimes) / 60 / np.sqrt(len(runtimes)), 3))
 
 # %%

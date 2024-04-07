@@ -12,6 +12,7 @@ import torch.autograd as autograd
 import torch.nn.functional as F
 import numpy as np
 import torch.optim as optim
+import time
 
 import utils
 
@@ -32,22 +33,26 @@ model = model.to(device=device)
 model.load_state_dict(torch.load('/mnt/8tb_slot8/jonas/workingDirDatasets/tumor-surrogate-model-states/daily-cherry-69/modelsWeights/epoch17.pth'))
 
 def runForPatient(thePatientIDX):
+    runtimeStart = time.time()
+
     start = 20000 + thePatientIDX
     number_of_samples = 1
     stop = start + number_of_samples
     dataset = MyDataset(start=start, stop=stop)
     plotforStep = 20
-    fixOrigin = True#False
+    fixOrigin = True#False#False
     optimizationSteps = 200#250
     learningRate = 0.01#0.01
-    useRealData = True
+    useRealData = False#True
     edemaThreshold = 0.25
     enhancingThreshold = 0.675
     plotFullTumorNotThresholded = False
 
     outputFolder = "/mnt/8tb_slot8/jonas/workingDirDatasets/addon-tumor-surrogate-output"
     if  not fixOrigin:
-        outputFolder += "-freeOrigin"
+        outputFolder += "/freeOrigin"
+    else:
+        outputFolder += "/fixOrigin"
 
     saveDict = {}
     
@@ -57,6 +62,7 @@ def runForPatient(thePatientIDX):
         data_loader = torch.utils.data.DataLoader(dataset, batch_size=number_of_samples,
                                                 num_workers=16, pin_memory=True, shuffle=False)
         patientName = str(start)
+        outputFolder += "/synthetic"
     else:
         # 7 is bad, exclude it TODO
         start = thePatientIDX
@@ -64,6 +70,8 @@ def runForPatient(thePatientIDX):
         patientName = dataset.patients[0]
         data_loader = torch.utils.data.DataLoader(dataset, batch_size=1,
                                                 num_workers=1,  shuffle=False)
+        outputFolder += "/realData"
+
 
     saveDict["patientName"] = patientName
     saveDict["logDicts"] = []
@@ -200,6 +208,7 @@ def runForPatient(thePatientIDX):
         break
 
     saveDict["wandbRunID"] = wandb.run.id
+    saveDict["runtime"] = time.time() - runtimeStart
 
     # save Wandb run
     wandb.save(outputFolder + "/optimizeOutputPatients/" +patientName + "/wandB.pdf")
@@ -208,7 +217,7 @@ def runForPatient(thePatientIDX):
 
     wandb.finish()
 
-for i in range(10):
+for i in range(50):
     runForPatient(i)
 
 # %%

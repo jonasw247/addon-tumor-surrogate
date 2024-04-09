@@ -13,6 +13,7 @@ import torch.nn.functional as F
 import numpy as np
 import torch.optim as optim
 import time
+import nibabel as nib
 
 import utils
 
@@ -43,7 +44,7 @@ def runForPatient(thePatientIDX):
     fixOrigin = True#False#False
     optimizationSteps = 200#250
     learningRate = 0.01#0.01
-    useRealData = False#True
+    useRealData = True#False#True
     edemaThreshold = 0.25
     enhancingThreshold = 0.675
     plotFullTumorNotThresholded = False
@@ -173,7 +174,7 @@ def runForPatient(thePatientIDX):
                 else:
                     cmapGT = 'hsv'
                     cmapPred = 'hsv'
-                    tumorPlot = prediction_masked
+                    tumorPlot = prediction_masked#_continous
 
                 img1 = ax1.imshow(input_tissue.cpu().detach().numpy()[0,0, :, :, 32], cmap='gray')
                 #TODO change this 
@@ -207,6 +208,7 @@ def runForPatient(thePatientIDX):
                 plt.close()
         break
 
+    
     saveDict["wandbRunID"] = wandb.run.id
     saveDict["runtime"] = time.time() - runtimeStart
 
@@ -215,11 +217,24 @@ def runForPatient(thePatientIDX):
     #save logDict
     torch.save(saveDict, outputFolder + "/optimizeOutputPatients/" + patientName + "/logDict.pth")
 
+    #save as nifti file Tissue
+    nib.save(nib.Nifti1Image(input_tissue.cpu().detach().numpy()[0,0], np.eye(4)), outputFolder + "/optimizeOutputPatients/" + patientName+ "/input_tissue.nii.gz")
+    #save as nifti file Prediction
+    nib.save(nib.Nifti1Image(prediction_masked.cpu().detach().numpy()[0,0], np.eye(4)), outputFolder  + "/optimizeOutputPatients/" + patientName+ "/prediction_masked.nii.gz")
+    #save as nifti file Ground Truth
+    nib.save(nib.Nifti1Image(output_ground_truth.cpu().detach().numpy()[0,0], np.eye(4)), outputFolder + "/optimizeOutputPatients/" + patientName+ "/output_ground_truth.nii.gz")
+    #save tumor Plot as nifti
+    nib.save(nib.Nifti1Image(prediction_masked_continous.cpu().detach().numpy()[0,0], np.eye(4)), outputFolder + "/optimizeOutputPatients/" + patientName+ "/tumorPlot.nii.gz")
     wandb.finish()
 
-for i in range(50):
+#%%
+for i in range(10):
     runForPatient(i)
 
+#%% 
+a = runForPatient(1)
+#%%
+a[0]
 # %%
 if torch.cuda.is_available():
     num_gpus = torch.cuda.device_count()

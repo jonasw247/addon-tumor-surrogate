@@ -1,4 +1,4 @@
-# Geometry-aware neural solver for fast Bayesian calibration of brain tumor models, [arXiv](https://arxiv.org/abs/2009.04240)
+# Rapid Personalization of PDE-Based Tumor Growth using a
+Differentiable Forward Model
 
-Implementations in Tensorflow and Pytorch can be found in corresponding folders.
-
+(https://openreview.net/pdf?id=7SMswKSKIX)

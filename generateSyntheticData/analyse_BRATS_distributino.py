@@ -30,6 +30,16 @@ plt.hist(totalVolume, bins=bins, alpha=0.5, label='Total')
 plt.legend(loc='upper right')
 plt.show()
 
+
+#%% t1 and nec over flair 
+volumeT1 = np.array(volumeT1)
+volumeFlair = np.array(volumeFlair)
+volumeNec = np.array(volumeNec)
+totalVolume = np.array(totalVolume)
+
+volumeRatio = (volumeT1 +volumeNec) /totalVolume
+
+plt.hist(volumeRatio, bins=30)
 #%%
 print("T1: ", np.mean(volumeT1), "+-", np.std(volumeT1) / np.sqrt(len(volumeT1)))
 # %%

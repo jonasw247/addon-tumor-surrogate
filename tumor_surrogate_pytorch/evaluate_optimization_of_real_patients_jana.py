@@ -2,7 +2,7 @@
 import numpy as np
 import torch
 import os
-freeOrigin = True#False
+freeOrigin = False#False
 synthetic  =True
 
 if freeOrigin:

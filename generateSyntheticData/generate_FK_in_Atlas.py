@@ -9,6 +9,7 @@ import nibabel as nib
 
 import multiprocessing
 import json
+import os
 
 def getOrigin(gm_data, wm_data):
     #check if origin is in the white or gray matter
@@ -35,8 +36,8 @@ def simulateOneSampleTumor(savePath):
 
     randomRanges = {
         'Dw_range': [0.001, 10.0],
-        'rho_range': [0.001, 10.0],
-        'stopping_volume_range': [1000, 400000],#based on the brats dataset tumors range till 250ml so lets take 400ml as max
+        'rho_range': [0.001, 1.0],
+        'stopping_volume_range': [1000, 250000],#based on the brats dataset tumors range till 250ml
         }
 
     stopping_volume = np.random.randint(randomRanges['stopping_volume_range'][0], randomRanges['stopping_volume_range'][1]) 
@@ -110,13 +111,13 @@ def simulateOneSampleTumor(savePath):
 def process_patient(i):
     seed = (os.getpid() + int(time.time() *10000)) % 2**30  # Using the process ID as a seed and also time
     np.random.seed(seed)
-    path = "/mnt/8tb_slot8/jonas/workingDirDatasets/synthetic_FK_Michals_solver/patient_" + ("000000000"  + str(i))[-7:] + "/"
+    path = "/mnt/8tb_slot8/jonas/workingDirDatasets/synthetic_FK_Michals_solver_smaller/patient_" + ("000000000"  + str(i))[-7:] + "/"
     simulateOneSampleTumor(path)
 
 
 if __name__ == '__main__':
-    number_of_patients = 10000
-    number_of_processes = 10
+    number_of_patients = 30000
+    number_of_processes = 15
     # Number of processes
 
     # Create a pool of processes

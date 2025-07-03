@@ -2,7 +2,10 @@
 from TumorGrowthToolkit.FK_DTI import FK_DTI_Solver
 import TumorGrowthToolkit.FK_DTI.tools as toolsDTI
 
+import os
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
+import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors
@@ -20,7 +23,7 @@ def getOrigin(gm_data, wm_data, tensors):
         origin = np.random.rand(3)
         intOrigin = (origin * gm_data.shape).astype(int)
         tensorsMax = np.mean(np.mean(tensors, axis=3), axis=3)
-        if gm_data[intOrigin[0], intOrigin[1], intOrigin[2]] == 0 and wm_data[intOrigin[0], intOrigin[1], intOrigin[2]]== 0 and tensorsMax[intOrigin[0], intOrigin[1], intOrigin[2]] < 0.0001:
+        if (gm_data[intOrigin[0], intOrigin[1], intOrigin[2]] <= 0.01 and wm_data[intOrigin[0], intOrigin[1], intOrigin[2]]<= 0.01) or tensorsMax[intOrigin[0], intOrigin[1], intOrigin[2]] <= 0.0001:
             print("Origin is in the background")
         else:
             print("Origin is in the brain")
@@ -36,12 +39,13 @@ def simulateOneSampleTumor(savePath):
     diffusionTensorsLower = nib.load(dtiPath).get_fdata()[:, :, :, 0, :]
     diffusionTensors = toolsDTI.get_tensor_from_lower6(diffusionTensorsLower)
 
-    wm_data = atlasTissue == 3
-    gm_data = atlasTissue == 2
+    wm_data = (atlasTissue == 3)*1.0
+    gm_data = (atlasTissue == 2)*1.0
 
     csfMask = np.ones_like(atlasTissue)
-    csfMask[wm_data] = 0
-    csfMask[gm_data] = 0
+    csfMask[wm_data>0] = 0
+    csfMask[gm_data>0] = 0
+    csfMask = csfMask * 1.0
 
     diffusionTensors[csfMask > 0] = 0
 
@@ -64,8 +68,12 @@ def simulateOneSampleTumor(savePath):
         'rho': rho,         # Proliferation rate
         'RatioDw_Dg': 10,  # Ratio of diffusion coefficients in white and grey matter
         'diffusionTensors': diffusionTensors,
+        'gm': gm_data,      # Grey matter data
+        'wm': wm_data,      # White matter data
         "diffusionEllipsoidScaling": 1,
-        "diffusionTensorExponent": 1,        
+        "diffusionTensorExponent": 1,
+        "desiredSTD": 0.8,        
+        "use_homogen_gm": True, #use homogenized gm for diffusion
         'NxT1_pct': origin[0],    # tumor position [%]
         'NyT1_pct': origin[1],
         'NzT1_pct': origin[2],
@@ -75,14 +83,14 @@ def simulateOneSampleTumor(savePath):
         'verbose': True, #printing timesteps 
         'time_series_solution_Nt': None,#64, #64, # number of timesteps in the output
         'stopping_volume' : stopping_volume, #stop when the volume of the tumor is less than this value
-        #'stopping_time' : 100000, #stop when the time is greater than this value
+        'stopping_time' : 100000, #stop when the time is greater than this value
     }        
 
 
     # Run the FK_solver and plot the results
     start_time = time.time()
     dti_solver = FK_DTI_Solver(parameters)
-    result = dti_solver.solve()
+    result = dti_solver.solve(doPlot=False)
     end_time = time.time()  # Store the end time
     execution_time = int(end_time - start_time)  # Calculate the difference
 
@@ -102,6 +110,8 @@ def simulateOneSampleTumor(savePath):
     del result['final_state']
     del result['initial_state']
     del parameters['diffusionTensors']
+    del parameters['gm']
+    del parameters['wm']
     saveDict = {
         "parameters": parameters,
         "results": result,
@@ -124,21 +134,27 @@ def simulateOneSampleTumor(savePath):
 # %%
 
 def process_patient(i):
-    seed = (os.getpid() + int(time.time() *10000)) % 2**30  # Using the process ID as a seed and also time
-    np.random.seed(seed)
-    path = "/mnt/8tb_slot8/jonas/workingDirDatasets/synthetic_FK_DTI_in_Atlas/patient_" + ("000000000"  + str(i))[-7:] + "/"
-    simulateOneSampleTumor(path)
-
+    for k in range(50): # run 10x the same
+        try:
+            seed = (os.getpid() + int(time.time() *10000)) % 2**30  # Using the process ID as a seed and also time
+            np.random.seed(seed)
+            path = "/mnt/8tb_slot8/jonas/workingDirDatasets/synthetic_FK_DTI_in_Atlas_STD3/patient_" + ("000000000"  + str(i))[-7:] + "/"
+            simulateOneSampleTumor(path)
+            return
+        except Exception as e:
+            print(f"Error processing patient {i}: {e}")
+            print("Retrying...")
 
 if __name__ == '__main__':
-    number_of_patients = 30000
-    number_of_processes = 10
+    number_of_patients = 29000
+    start = 1000
+    number_of_processes = 15
     # Number of processes
 
     # Create a pool of processes
     pool = multiprocessing.Pool(processes=number_of_processes)
     # Range of patients
-    patient_indices = range(number_of_patients)
+    patient_indices = range(start, start + number_of_patients)
 
     # Map process_patient function over the range of patient indices
     pool.map(process_patient, patient_indices)
@@ -146,5 +162,9 @@ if __name__ == '__main__':
     # Close the pool and wait for the work to finish
     pool.close()
     pool.join()
+
+# %%
+#process_patient(0)  # Test single patient processing
+
 
 # %%

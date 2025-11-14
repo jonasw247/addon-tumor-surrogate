@@ -1,4 +1,5 @@
 #%%
+
 from TumorGrowthToolkit.FK_DTI import FK_DTI_Solver
 import TumorGrowthToolkit.FK_DTI.tools as toolsDTI
 
@@ -56,11 +57,14 @@ def simulateOneSampleTumor(savePath):
         'Dw_range': [0.001, 10.0],
         'rho_range': [0.001, 1.0],
         'stopping_volume_range': [1000, 250000],#based on the brats dataset tumors range till 250ml
+        'desiredSTD_range': [0.5, 1.5],
         }
 
     stopping_volume = np.random.randint(randomRanges['stopping_volume_range'][0], randomRanges['stopping_volume_range'][1]) 
     dw = np.random.uniform(randomRanges['Dw_range'][0], randomRanges['Dw_range'][1])
     rho = np.random.uniform(randomRanges['rho_range'][0], randomRanges['rho_range'][1])
+    STD = np.random.uniform(randomRanges['desiredSTD_range'][0], randomRanges['desiredSTD_range'][1])
+    print(f"Parameters: Dw={dw}, rho={rho}, stopping_volume={stopping_volume}, STD={STD}, origin={origin}")
 
     # Set up parameters
     parameters = {
@@ -70,9 +74,9 @@ def simulateOneSampleTumor(savePath):
         'diffusionTensors': diffusionTensors,
         'gm': gm_data,      # Grey matter data
         'wm': wm_data,      # White matter data
-        "diffusionEllipsoidScaling": 1,
+        "diffusionEllipsoidScaling":1,
         "diffusionTensorExponent": 1,
-        "desiredSTD": 0.8,        
+        "desiredSTD": STD,        
         "use_homogen_gm": True, #use homogenized gm for diffusion
         'NxT1_pct': origin[0],    # tumor position [%]
         'NyT1_pct': origin[1],
@@ -132,13 +136,13 @@ def simulateOneSampleTumor(savePath):
 
 """
 # %%
-
+pathGlob = "/u/home/wejo/Documents/workingDirDataset/syntheticDTIInAtlas/"
 def process_patient(i):
     for k in range(50): # run 10x the same
         try:
             seed = (os.getpid() + int(time.time() *10000)) % 2**30  # Using the process ID as a seed and also time
             np.random.seed(seed)
-            path = "/mnt/8tb_slot8/jonas/workingDirDatasets/synthetic_FK_DTI_in_Atlas_STD3/patient_" + ("000000000"  + str(i))[-7:] + "/"
+            path = pathGlob + "patient_" + ("000000000"  + str(i))[-7:] + "/"
             simulateOneSampleTumor(path)
             return
         except Exception as e:
@@ -146,9 +150,9 @@ def process_patient(i):
             print("Retrying...")
 
 if __name__ == '__main__':
-    number_of_patients = 29000
-    start = 1000
-    number_of_processes = 15
+    number_of_patients = 31000
+    start = 0
+    number_of_processes = 60
     # Number of processes
 
     # Create a pool of processes
